@@ -1,0 +1,37 @@
+{
+  "name": "@camchis/exact-posthog",
+  "version": "0.1.0",
+  "description": "PostHog for an Exact app's data code: events and feature flags over PostHog's HTTP API, with no SDK. Unofficial.",
+  "license": "MIT",
+  "author": "Cameron Chisholm",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/camchis/exact-posthog.git"
+  },
+  "keywords": [
+    "exact",
+    "posthog",
+    "analytics",
+    "feature-flags"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.ts"
+    }
+  },
+  "files": [
+    "index.ts",
+    "index.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "types": "tsc index.ts --declaration --emitDeclarationOnly --target es2022 --module esnext --moduleResolution bundler --strict --skipLibCheck",
+    "test": "bun test test/"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}
