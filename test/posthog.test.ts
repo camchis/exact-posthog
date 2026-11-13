@@ -7,12 +7,16 @@ type Seen = { path: string; body: any };
 let seen: Seen[] = [];
 let flagsReply: unknown = { flags: {} };
 let status = 200;
+// Set, a request waits for it before answering (so a test can send while another request is on its way).
+let hold: Promise<void> | null = null;
 const server = Bun.serve({
   port: 0,
   async fetch(request) {
     const url = new URL(request.url);
     seen.push({ path: url.pathname + url.search, body: await request.json() });
-    if (status !== 200) return new Response('no', { status });
+    const answer = status;
+    if (hold) await hold;
+    if (answer !== 200) return new Response('no', { status: answer });
     return Response.json(url.pathname === '/flags/' ? flagsReply : { status: 1 });
   },
 });
@@ -25,6 +29,7 @@ beforeEach(() => {
   seen = [];
   flagsReply = { flags: {} };
   status = 200;
+  hold = null;
 });
 
 function io(initial?: string): PostHogIO & { file: () => string | undefined } {
@@ -108,6 +113,30 @@ test('an event that cannot be delivered waits for the next, and the queue is bou
     '2026-11-11T12:00:00.003Z',
     '2026-11-11T12:00:00.004Z',
   ]);
+});
+
+test('two sends at once carry each event once, and a failed one keeps only its own events', async () => {
+  const store = io();
+  const client = (await open(store))!;
+  let release!: () => void;
+  hold = new Promise((resolve) => (release = resolve));
+  // The first request fails, but only once the second (carrying only its own event) is on its way.
+  status = 503;
+  const first = client.lifecycle('Application Opened', AT);
+  while (seen.length < 1) await Bun.sleep(1);
+  status = 200;
+  const second = client.lifecycle('Application Backgrounded', AT + 1000);
+  while (seen.length < 2) await Bun.sleep(1);
+  release();
+  await Promise.all([first, second]);
+  expect(seen.map((s) => s.body.batch.map((e: any) => e.event))).toEqual([['Application Opened'], ['Application Backgrounded']]);
+  // The failed event waits, the delivered one is gone, and the next send carries the failed one once.
+  expect(JSON.parse(store.file()!).queue.map((e: any) => e.event)).toEqual(['Application Opened']);
+  hold = null;
+  seen = [];
+  await client.lifecycle('Application Became Active', AT + 2000);
+  expect(seen.map((s) => s.body.batch.map((e: any) => e.event))).toEqual([['Application Opened', 'Application Became Active']]);
+  expect(JSON.parse(store.file()!).queue).toEqual([]);
 });
 
 test('an opted-out install sends no events but still reads its flags', async () => {

@@ -13,3 +13,10 @@ test('index.d.ts is what index.ts declares', () => {
   expect(run.stderr.toString() + run.stdout.toString()).toBe('');
   expect(readFileSync(join(here, 'index.d.ts'), 'utf8')).toBe(readFileSync(join(out, 'index.d.ts'), 'utf8'));
 });
+
+test("reportErrors wraps an Exact app's generic answer, inline, and types the report's arguments", () => {
+  const here = resolve(import.meta.dir, '..');
+  const tsc = resolve(here, 'node_modules/.bin/tsc');
+  const run = Bun.spawnSync([tsc, 'test/answer.fixture.ts', '--noEmit', '--target', 'es2022', '--module', 'esnext', '--moduleResolution', 'bundler', '--strict', '--skipLibCheck', '--allowImportingTsExtensions'], { cwd: here });
+  expect(run.stderr.toString() + run.stdout.toString()).toBe('');
+});

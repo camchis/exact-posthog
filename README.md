@@ -1,11 +1,11 @@
 # @camchis/exact-posthog
 
-PostHog for an [Exact](https://github.com/expo/exact) app's data code: events and feature flags over
+PostHog for an [Exact](https://github.com/expo/exact) app's data code: events, errors and feature flags over
 PostHog's HTTP API (`/batch/` and `/flags/?v=2`), with no SDK.
 
 **Unofficial and experimental.** This isn't made by Expo or PostHog. It's written for a port of the iOS and
 Android app [fiddl](https://fiddl.xyz) to Exact, and Exact is pre-1.0 and changes weekly, so expect breaking
-changes. Version 0.1.0.
+changes. Version 0.2.0.
 
 ## Install
 
@@ -56,7 +56,8 @@ for the file.
   (`distinct_id`), with `$process_person_profile: true`. `installed` says whether this launch made it, so
   the app can send `Application Installed`.
 - **Events:** typed by the app's own map. Each event joins a queue that is sent to `/batch/` at once.
-  Offline, the queue waits for the next event and keeps the newest `queueMax` (100).
+  Offline, the queue waits for the next event and keeps the newest `queueMax` (100). Sends that overlap (two
+  answers at once) each carry only events no other request is carrying.
 - **Lifecycle events:** PostHog's names (`Application Installed`, `Opened`, `Became Active`,
   `Backgrounded`). The app decides when to send them.
 - **Opt-out:** no events, and the queue is dropped. Flags are still read.
@@ -64,11 +65,73 @@ for the file.
   is kept across launches, and a failed fetch keeps it. `answered()` says whether PostHog has ever answered
   this install, so an app can fail closed until it has.
 
+## Errors
+
+PostHog's error tracking reads `$exception` events. The client sends one with `captureException`:
+
+```ts
+await client?.captureException(error, at, { handled: false });
+```
+
+An Exact data module has no global error hook. Natively it runs in Hermes with no `onerror`, no
+`unhandledrejection` and no `reportError`. Exact's prelude keeps Hermes's rejection tracker for itself, and an
+unhandled rejection only reaches the runner's log. So the errors that matter are the ones a source lets through:
+the runner catches them and fails the resource (`failure(x)` in the Contract). `reportErrors` wraps the
+module's `answer`, or one source, and catches them first:
+
+```ts
+import { reportErrors } from '@camchis/exact-posthog';
+
+export const answer: Answer = reportErrors(
+  (source, args, store, storage, native) => sources[source](args, store, storage, native),
+  // The call's arguments come as one list: [source, args, store, storage, native].
+  async (error, [, args, , storage]) =>
+    (await analytics(storage))?.captureException(error, timeOf(args), { handled: false }),
+);
+```
+
+`analytics(storage)` and `timeOf(args)` are the app's own: how it opens its client, and where its sources
+carry their time.
+
+- **The report happens inside the answer.** The wrapper awaits it and then throws the error on, so the resource
+  fails as before. Exact refuses a `fetch` made when no answer is in flight, so a report started after the
+  answer ends would wait in the queue until the next event.
+- **Timing doesn't change on success.** An answer given at once is still given at once. Only a throw at once
+  becomes a rejected promise, which `Answer` and `Sources` accept.
+- **Expected failures are skipped.** By default (`isExpectedError`) the wrapper doesn't report Exact's
+  `FetchError` (offline, a timeout, a refused request) or a refusal at bake (`code: 'bake'`). Pass your own
+  `ignore` as the third argument to change that.
+- **Each error goes once.** An error already given to `captureException` and then rethrown isn't reported
+  again. Only objects are tracked this way: a thrown string rethrown is reported again, and the repeat limit
+  below drops it.
+
+What an `$exception` carries:
+
+- `$exception_list`, with one entry: the error's `type` (its `name`), its `value` (the message),
+  `mechanism: { handled, synthetic }`, and a raw stack trace of up to 50 frames.
+- **Frames:** `platform: 'custom'` and `lang: 'javascript'`, outermost first, parsed from Hermes, V8 and
+  JavaScriptCore stacks.
+  - Each file is cut to its last path segment, because a native path names the app's container.
+  - Hermes's built-ins, Exact's prelude and engine frames are `in_app: false`.
+  - Frames are `resolved: false`: line numbers point into Exact's generated `app.js`, and on the web the
+    names are minified.
+- **Nothing else.** The stack's message lines are not frames. A thrown string is sent as its message.
+  Anything else that isn't an error sends only its kind (`Non-error thrown: object`), since it may hold app
+  data.
+- **Opt-out applies.** An opted-out install sends no exceptions.
+- **Limits:** the same type and message goes at most once a minute (`exceptionRepeatMs`), and at most 100 go
+  in one launch (`exceptionMax`).
+- **Time:** without `at`, PostHog stamps an exception with the time it receives it.
+
+Uncaught rejections from work no answer awaits (a `void promise`) aren't caught: catch them where they start
+and call `captureException`.
+
 ## Not yet
 
 - **Device and app properties** (`$os`, `$device_model`, `$app_version`, …): Exact has no source for the OS
   or the model. The version becomes readable with `exactDelivery().version` (expo/exact#360).
-- **Uncaught errors:** a data module has no global error hook.
+- **Errors outside an answer:** rejections no answer awaits, and errors in the view or the native host (see
+  [Errors](#errors)). Also missing: chained causes (`error.cause`) and source maps.
 - **Also missing:** sessions (`$session_id`), `$feature_flag_called`, `identify`, person and group
   properties, retries with backoff, and gzip.
 

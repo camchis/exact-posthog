@@ -1,7 +1,7 @@
 {
   "name": "@camchis/exact-posthog",
-  "version": "0.1.0",
-  "description": "PostHog for an Exact app's data code: events and feature flags over PostHog's HTTP API, with no SDK. Unofficial.",
+  "version": "0.2.0",
+  "description": "PostHog for an Exact app's data code: events, errors and feature flags over PostHog's HTTP API, with no SDK. Unofficial.",
   "license": "MIT",
   "author": "Cameron Chisholm",
   "repository": {
