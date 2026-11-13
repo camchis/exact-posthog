@@ -16,7 +16,7 @@ bun add github:camchis/exact-posthog
 ```
 
 Exact type-checks a package from its declarations only, so this package ships `index.d.ts` and exports it
-as `types`.
+as `types` ([expo/exact#518](https://github.com/expo/exact/issues/518)).
 
 ## Use
 
@@ -73,9 +73,9 @@ PostHog's error tracking reads `$exception` events. The client sends one with `c
 await client?.captureException(error, at, { handled: false });
 ```
 
-An Exact data module has no global error hook. Natively it runs in Hermes with no `onerror`, no
-`unhandledrejection` and no `reportError`. Exact's prelude keeps Hermes's rejection tracker for itself, and an
-unhandled rejection only reaches the runner's log. So the errors that matter are the ones a source lets through:
+An Exact data module has no global error hook ([expo/exact#519](https://github.com/expo/exact/issues/519)).
+Natively it runs in Hermes with no `onerror`, no `unhandledrejection` and no `reportError`. Exact's prelude
+keeps Hermes's rejection tracker for itself, and an unhandled rejection only reaches the runner's log. So the errors that matter are the ones a source lets through:
 the runner catches them and fails the resource (`failure(x)` in the Contract). `reportErrors` wraps the
 module's `answer`, or one source, and catches them first:
 
